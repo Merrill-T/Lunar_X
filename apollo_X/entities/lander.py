@@ -319,12 +319,11 @@ class Lander:
                 rad = math.radians(self.angle)
                 ax += (thrust / self.mass) * -math.sin(rad)
                 ay += (thrust / self.mass) * -math.cos(rad)
+            elif self.fuel <= 0:
+                self.engine_out = True
+                self.engine_on = False
             else:
                 self.engine_on = False
-
-            # Aerodynamic drag
-            ax -= 0.5 * Config.CD * Config.AREA * Config.RHO * self.vx * abs(self.vx) / self.mass
-            ay -= 0.5 * Config.CD * Config.AREA * Config.RHO * self.vy * abs(self.vy) / self.mass
 
             # 6b) Integrate translational motion
             self.ax, self.ay = ax, ay
@@ -347,17 +346,13 @@ class Lander:
             self.angular_velocity = 0.0
 
             # Possible lift-off thrust from landed state
+            self.engine_on = False
+            ax = ay = 0.0
+            self.ax, self.ay = ax, ay
+
             if keys[pygame.K_UP] and self.fuel > 0 and not self.engine_out:
-                if not self.engine_on and not self.engine_out:
-                    self.engine_startup_count += 1
-                    if self.engine_startup_count >= Config.ENGINE_STARTUP_LIMIT:
-                        self.report = {
-                            "ENGINE FAILURE": "START_UP",
-                        }
-                        self.engine_out = True
-                        self.engine_on = False
-                    else:
-                        self.engine_on = True
+                self.engine_on = True
+                self.landed = False
                 thrust = Config.MAX_THRUST * self.throttle
                 mflow = thrust / (Config.ISP * Config.G0_MOON)
                 fuel_used = mflow * dt_sim * self.throttle
@@ -365,9 +360,13 @@ class Lander:
                 rad = math.radians(self.angle)
                 ax += (thrust / self.mass) * -math.sin(rad)
                 ay += (thrust / self.mass) * -math.cos(rad)
-            else:
-                self.engine_on = False
-
+                # 6b) Integrate translational motion
+                self.ax, self.ay = ax, ay
+                self.vx += ax * dt_sim
+                self.vy += -abs(ay * dt_sim)
+                self.gforce = math.hypot(ax, ay) / 9.81
+                self.x += self.vx * dt_sim * self.px_per_m
+                self.y += self.vy * dt_sim * self.px_per_m
             elif abs(angle_diff) >= rotation_step:
                 # --- pivot physics around contact point ---
                 pivot_x, pivot_y = self._contact_screen
@@ -501,13 +500,6 @@ class Lander:
             )
 
             screen.blit(debug_circle, screen_pos)
-
-            pygame.draw.rect(
-                screen,
-                (0, 255, 0),
-                lander_rect,
-                1  # 1 pixel thickness
-            )
 
             if ship_mask.overlap(rock_mask, offset_mask):
                 # Collision: return a copy with distance for convenience
